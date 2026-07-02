@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Willingness to Defend — A Wargame</title>
+<style>
+  :root{
+    --surface-0:#121211; --surface-1:#1a1a19; --surface-2:#232322;
+    --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#8a897f;
+    --series-wd:#3987e5; --series-gp:#199e70; --series-at:#c98500;
+    --accent:#3987e5; --danger:#e66767; --border:#33332f;
+    --paper:#f4efe4; --paper-ink:#181510;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--surface-0);color:var(--text-primary);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:32px 20px 80px}
+  h1{font-size:26px;margin:0 0 4px} h2{font-size:19px;margin:24px 0 8px}
+  .sub{color:var(--text-secondary);margin:0 0 28px}
+  .card{background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:20px;margin:14px 0}
+  .muted{color:var(--text-muted);font-size:13px}
+  .secondary{color:var(--text-secondary)}
+  button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--border);
+    background:var(--surface-2);color:var(--text-primary);padding:10px 18px}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  button:disabled{opacity:.45;cursor:default}
+  .rolegrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+  .rolecard{cursor:pointer;text-align:left;padding:16px}
+  .rolecard:hover,.rolecard.sel{border-color:var(--accent)}
+  .rolecard h3{margin:0 0 6px;font-size:16px}
+  input[type=text],textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:8px;color:var(--text-primary);font:inherit;padding:10px}
+  .opt{display:block;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
+    padding:10px 14px;margin:8px 0;cursor:pointer}
+  .opt:hover{border-color:var(--accent)} .opt input{margin-right:10px}
+  .opt.sel{border-color:var(--accent);background:#20304a}
+  .scorebadge{display:inline-block;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:999px;padding:6px 14px;font-size:14px;color:var(--text-secondary)}
+  .scorebadge b{color:var(--text-primary);font-size:16px}
+  .paper{background:var(--paper);color:var(--paper-ink);border-radius:6px;padding:22px 26px;margin:14px 0;
+    font-family:Georgia,"Times New Roman",serif}
+  .paper .outlet{font-size:13px;letter-spacing:3px;text-transform:uppercase;border-bottom:2px solid var(--paper-ink);
+    padding-bottom:6px;margin-bottom:10px;display:flex;justify-content:space-between}
+  .paper h3{font-size:28px;line-height:1.15;margin:0 0 6px}
+  .paper .subhead{font-style:italic;font-size:15px;color:#4a4438}
+  .actions-list li{margin:6px 0;color:var(--text-secondary)}
+  #loading{position:fixed;inset:0;background:rgba(10,10,10,.88);display:none;
+    align-items:center;justify-content:center;flex-direction:column;gap:18px;z-index:10;text-align:center}
+  .spinner{width:38px;height:38px;border:3px solid var(--border);border-top-color:var(--accent);
+    border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .turnpill{background:var(--surface-2);border-radius:999px;padding:4px 12px;font-size:13px;color:var(--text-secondary)}
+  .topbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .legend{display:flex;gap:18px;margin:10px 0 2px;font-size:13px;color:var(--text-secondary)}
+  .legend .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+  .statrow{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}
+  .stat{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 18px;min-width:130px}
+  .stat .v{font-size:26px;font-weight:700} .stat .l{font-size:12px;color:var(--text-muted)}
+  .wd-line{stroke-dasharray:1000;stroke-dashoffset:1000;animation:draw 2.4s ease forwards .4s}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  .late{opacity:0;animation:fadein .8s ease forwards 2.9s}
+  @keyframes fadein{to{opacity:1}}
+  .reveal-banner{background:#20304a;border:1px solid var(--series-wd);border-radius:10px;padding:16px 20px;margin:16px 0}
+  pre.rolecardtext{white-space:pre-wrap;font:inherit;color:var(--text-secondary);margin:0}
+  .timeline td{padding:7px 12px 7px 0;vertical-align:top;font-size:14px;color:var(--text-secondary)}
+  .timeline td:first-child{color:var(--text-muted);white-space:nowrap}
+  .delta-pos{color:var(--series-gp)} .delta-neg{color:var(--danger)}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div id="loadmsg" class="secondary">The public is reacting…</div>
+  <div class="muted">simulating one week of national life</div>
+</div>
+
+<script>
+const $ = sel => document.querySelector(sel);
+let V = null;           // current server view
+let formState = {};
+
+const FLAVOR = ['The public is reacting…','Editors are choosing tomorrow’s front page…',
+  'Pollsters are in the field…','Ministers are drafting talking points…','The rumor mill is turning…'];
+let flavorTimer = null;
+function loading(on){
+  $('#loading').style.display = on ? 'flex' : 'none';
+  clearInterval(flavorTimer);
+  if(on){ let i=0; $('#loadmsg').textContent = FLAVOR[0];
+    flavorTimer = setInterval(()=>{ i=(i+1)%FLAVOR.length; $('#loadmsg').textContent = FLAVOR[i]; }, 2600); }
+}
+
+async function api(url, body){
+  const res = await fetch(url, body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : undefined);
+  if(!res.ok) throw new Error((await res.json()).error || res.status);
+  return res.json();
+}
+
+// ---------- landing ----------
+function renderLanding(){
+  $('#app').innerHTML = `
+    <h1>Willingness to Defend</h1>
+    <p class="sub">A wargame about hot information, journalism, and whether a public would still fight for its country.</p>
+    <div class="rolegrid">
+      <button class="card rolecard" disabled style="opacity:.5;text-align:left">
+        <h3>Full game</h3><div class="muted">5 human players over the network — coming soon.</div>
+      </button>
+      <button class="card rolecard sel" style="text-align:left">
+        <h3>Demo game &nbsp;▸</h3><div class="muted">Solo, ~3 minutes. You play one role; the simulation plays everyone else.</div>
+      </button>
+    </div>
+    <h2>Choose your role</h2>
+    <div class="rolegrid" id="roles">
+      <button class="card rolecard" data-role="journalist"><h3>🗞️ Journalist</h3>
+        <div class="muted">Hot documents just hit your desk. Publish or hold?</div></button>
+      <button class="card rolecard" data-role="government"><h3>🏛️ Government</h3>
+        <div class="muted">You knew the truth. Now it may leak. Stay in office.</div></button>
+      <button class="card rolecard" data-role="opposition"><h3>📣 Opposition</h3>
+        <div class="muted">Their scandal is your opening — but it’s your country too.</div></button>
+    </div>
+    <div class="card">
+      <label class="muted">Your name (optional)</label>
+      <input type="text" id="pname" placeholder="e.g. Simon" maxlength="40" style="margin-top:6px">
+      <div style="margin-top:14px"><button class="primary" id="startbtn" disabled>Start demo game</button></div>
+    </div>
+    <p class="muted">One score is tracked in secret throughout the game and revealed only at the end.</p>`;
+  let role = null;
+  document.querySelectorAll('#roles .rolecard').forEach(b=>{
+    b.onclick = ()=>{ role = b.dataset.role;
+      document.querySelectorAll('#roles .rolecard').forEach(x=>x.classList.remove('sel'));
+      b.classList.add('sel'); $('#startbtn').disabled = false; };
+  });
+  $('#startbtn').onclick = async ()=>{
+    loading(true);
+    try{ V = await api('/api/game', {role, name: $('#pname').value}); render(); }
+    catch(e){ alert('Could not start game: '+e.message); }
+    loading(false);
+  };
+}
+
+// ---------- game turn ----------
+function fieldHtml(f){
+  if(f.type === 'text')
+    return `<div style="margin:14px 0"><label class="muted">${f.label}</label>
+      <input type="text" data-field="${f.name}" maxlength="200" style="margin-top:6px"></div>`;
+  const opts = f.options.map(o=>
+    `<label class="opt" data-group="${f.name}"><input type="radio" name="${f.name}" value="${o.value}">${o.label}</label>`).join('');
+  return `<div style="margin:14px 0" id="fld-${f.name}"><label class="muted">${f.label}</label>${opts}</div>`;
+}
+
+function renderGame(){
+  const d = V.lastDebrief;
+  $('#app').innerHTML = `
+    <div class="topbar">
+      <span class="turnpill">Week ${V.turn + 1} of 3</span>
+      <span class="scorebadge">${V.visibleScore.label}: <b>${V.visibleScore.value}</b> / 100</span>
+    </div>
+    <h1>${V.roleLabel}</h1>
+    ${d ? debriefHtml(d) : ''}
+    ${V.roleCard ? `<div class="card"><h2 style="margin-top:0">Your briefing</h2><pre class="rolecardtext">${V.roleCard}</pre></div>` : ''}
+    ${V.brief ? `<div class="card"><div class="muted" style="margin-bottom:6px">FROM YOUR ASSISTANT</div><div class="secondary">${V.brief}</div></div>` : ''}
+    <div class="card"><div class="muted" style="margin-bottom:6px">PUBLIC MOOD</div><div class="secondary">${V.moodHint}</div></div>
+    <div class="card">
+      <h2 style="margin-top:0">${V.actionSpec.prompt}</h2>
+      ${V.actionSpec.fields.map(fieldHtml).join('')}
+      <button class="primary" id="submit" disabled>Commit this action</button>
+      <div class="muted" style="margin-top:8px">Your action is final — the week unfolds once you commit.</div>
+    </div>`;
+  formState = {};
+  const spec = V.actionSpec;
+  spec.fields.filter(f=>f.showIf).forEach(f=>{ $('#fld-'+f.name).style.display = 'none'; });
+  document.querySelectorAll('.opt input').forEach(inp=>{
+    inp.onchange = ()=>{
+      formState[inp.name] = inp.value;
+      document.querySelectorAll(`.opt[data-group="${inp.name}"]`).forEach(l=>l.classList.remove('sel'));
+      inp.closest('.opt').classList.add('sel');
+      spec.fields.filter(f=>f.showIf).forEach(f=>{
+        const show = formState[f.showIf.field] === f.showIf.value;
+        $('#fld-'+f.name).style.display = show ? '' : 'none';
+        if(!show) delete formState[f.name];
+      });
+      const required = spec.fields.filter(f=>f.type==='choice' &&
+        (!f.showIf || formState[f.showIf.field]===f.showIf.value));
+      $('#submit').disabled = !required.every(f=>formState[f.name]);
+    };
+  });
+  $('#submit').onclick = async ()=>{
+    const freeText = ($('input[data-field="freeText"]')||{}).value || '';
+    loading(true);
+    try{ V = await api(`/api/game/${V.gameId}/action`, {choices: formState, freeText}); render(); }
+    catch(e){ alert('Turn failed: '+e.message); }
+    loading(false);
+    window.scrollTo(0,0);
+  };
+}
+
+function debriefHtml(d){
+  return `
+    <div class="paper">
+      <div class="outlet"><span>${d.frontPage.outlet}</span><span>Nordavia</span></div>
+      <h3>${d.frontPage.headline}</h3>
+      <div class="subhead">${d.frontPage.subhead}</div>
+    </div>
+    <div class="card">
+      <div class="muted" style="margin-bottom:6px">MEANWHILE, THIS WEEK</div>
+      <ul class="actions-list" style="margin:0;padding-left:18px">
+        ${d.otherActions.map(a=>`<li><b style="color:var(--text-primary)">${a.actor}:</b> ${a.summary}</li>`).join('')}
+      </ul>
+      <p class="secondary" style="margin-bottom:0">${d.publicNarrative}</p>
+    </div>`;
+}
+
+// ---------- end game / reveal ----------
+function chartSvg(traj){
+  const W=680,H=280,P={l:38,r:120,t:16,b:28};
+  const xs=i=>P.l+i*( (W-P.l-P.r)/(traj.length-1) );
+  const ys=v=>P.t+(100-v)*((H-P.t-P.b)/100);
+  const line=(key)=>traj.map((p,i)=>`${xs(i)},${ys(p[key])}`).join(' ');
+  const series=[
+    {key:'wd',label:'Willingness to Defend',color:'var(--series-wd)',cls:'wd-line',w:3},
+    {key:'gp',label:'Government Popularity',color:'var(--series-gp)',cls:'late',w:2},
+    {key:'at',label:'Journalist Attention',color:'var(--series-at)',cls:'late',w:2},
+  ];
+  const grid=[0,25,50,75,100].map(v=>
+    `<line x1="${P.l}" y1="${ys(v)}" x2="${W-P.r}" y2="${ys(v)}" stroke="var(--border)" stroke-width="1"/>
+     <text x="${P.l-8}" y="${ys(v)+4}" text-anchor="end" font-size="11" fill="var(--text-muted)">${v}</text>`).join('');
+  const xlabels=traj.map((p,i)=>`<text x="${xs(i)}" y="${H-8}" text-anchor="middle" font-size="11" fill="var(--text-muted)">${p.turn}</text>`).join('');
+  const lines=series.map(s=>`
+    <polyline class="${s.cls}" points="${line(s.key)}" fill="none" stroke="${s.color}" stroke-width="${s.w}" stroke-linecap="round"/>
+    ${traj.map((p,i)=>`<circle class="${s.cls}" cx="${xs(i)}" cy="${ys(p[s.key])}" r="4.5" fill="${s.color}">
+      <title>${s.label}, ${p.turn}: ${p[s.key]}</title></circle>`).join('')}
+    <circle class="${s.cls}" cx="${xs(traj.length-1)+14}" cy="${ys(traj[traj.length-1][s.key])}" r="4" fill="${s.color}"/>
+    <text class="${s.cls}" x="${xs(traj.length-1)+22}" y="${ys(traj[traj.length-1][s.key])+4}" font-size="12"
+      fill="var(--text-secondary)">${s.label.split(' ')[0]} ${traj[traj.length-1][s.key]}</text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Score trajectories over the game">
+    ${grid}${xlabels}${lines}</svg>`;
+}
+
+function renderEnd(){
+  const r = V.reveal, t = r.trajectory;
+  const wdStart = t[0].wd, wdEnd = r.finalScores.wd, dw = wdEnd - wdStart;
+  $('#app').innerHTML = `
+    <h1>Game over — the hidden score</h1>
+    <div class="reveal-banner">
+      <div class="muted">TRACKED IN SECRET ALL GAME, THE WAY A DEFENSE MINISTRY WOULD</div>
+      <div style="font-size:20px;margin-top:6px"><b>Willingness of the public to defend Nordavia:</b>
+        <span style="font-size:30px;font-weight:700;color:var(--series-wd)"> ${wdEnd}</span> / 100
+        <span class="${dw<0?'delta-neg':'delta-pos'}" style="font-size:16px"> (${dw>=0?'+':''}${dw} since the leak landed)</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="legend">
+        <span><span class="dot" style="background:var(--series-wd)"></span>Willingness to Defend</span>
+        <span><span class="dot" style="background:var(--series-gp)"></span>Government Popularity</span>
+        <span><span class="dot" style="background:var(--series-at)"></span>Journalist Attention</span>
+      </div>
+      ${chartSvg(t)}
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">How the weeks unfolded</h2>
+      <table class="timeline">${r.timeline.map(x=>`
+        <tr><td>Week ${x.turn+1}</td>
+        <td><b style="color:var(--text-primary)">${x.keyMoment}</b><br>You: ${x.yourAction}<br>
+        <span class="${x.wdDelta<0?'delta-neg':'delta-pos'}">WD ${x.wdDelta>=0?'+':''}${x.wdDelta} that week</span></td></tr>`).join('')}
+      </table>
+    </div>
+    <div class="statrow">
+      <div class="stat"><div class="v">${r.allTime.gamesPlayed}</div><div class="l">games ever played</div></div>
+      ${r.allTime.avgFinalWd!=null?`<div class="stat"><div class="v">${r.allTime.avgFinalWd}</div><div class="l">avg final WD, all games</div></div>`:''}
+      <div class="stat"><div class="v">${r.finalScores.gp}</div><div class="l">final gov popularity</div></div>
+      <div class="stat"><div class="v">${r.finalScores.at}</div><div class="l">final journalist attention</div></div>
+    </div>
+    <button class="primary" onclick="location.reload()">Play again</button>`;
+}
+
+function render(){ if(!V) renderLanding(); else if(V.finished) renderEnd(); else renderGame(); }
+render();
+</script>
+</body>
+</html>

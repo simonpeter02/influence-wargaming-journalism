@@ -1,0 +1,13 @@
+{
+  "name": "influence-wargaming-journalism",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "start:stub": "LLM_STUB=1 node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
