@@ -1,0 +1,77 @@
+[
+  {
+    "id": "cbaf302f",
+    "role": "journalist",
+    "createdAt": "2026-07-02T15:48:44.745Z",
+    "finalWd": 78,
+    "finalGp": 38,
+    "finalAt": 81,
+    "timeline": [
+      {
+        "turn": 0,
+        "action": "publish (public call to action) — \"I am scared\"",
+        "keyMoment": "Leak Published"
+      },
+      {
+        "turn": 1,
+        "action": "publish a follow-up investigation (reassuring and constructive) — \"I feel a little guilty now\"",
+        "keyMoment": "Reassuring Follow-Up Published"
+      },
+      {
+        "turn": 2,
+        "action": "publish the held story (calling the public to action) — \"let's make europe dangerous again\"",
+        "keyMoment": "Call to Action Published"
+      }
+    ]
+  },
+  {
+    "id": "fab8fce1",
+    "role": "government",
+    "createdAt": "2026-07-02T15:55:08.197Z",
+    "finalWd": 62,
+    "finalGp": 41,
+    "finalAt": 65,
+    "timeline": [
+      {
+        "turn": 0,
+        "action": "prepare a communications plan — \"this is fake news and I will fight tooth and nail to make everyone believe this is not real\"",
+        "keyMoment": "Leak Looms Publicly"
+      },
+      {
+        "turn": 1,
+        "action": "announce emergency defense funding — \"this should settle everybody's nerves\"",
+        "keyMoment": "Emergency Funding Announced"
+      },
+      {
+        "turn": 2,
+        "action": "hold a press conference — \"come clean, because I am a little worried about inside leaks now. \"",
+        "keyMoment": "Government Comes Clean"
+      }
+    ]
+  },
+  {
+    "id": "dc374bbf",
+    "role": "journalist",
+    "createdAt": "2026-07-02T16:26:50.739Z",
+    "finalWd": 75,
+    "finalGp": 35,
+    "finalAt": 60,
+    "timeline": [
+      {
+        "turn": 0,
+        "action": "publish (government-critical exposé) — \"fast, quick\"",
+        "keyMoment": "Exposé Breaks Defense Lies"
+      },
+      {
+        "turn": 1,
+        "action": "stay quiet this week (reassuring and constructive) — \"going on vacation\"",
+        "keyMoment": "Government Vows Urgent Funding"
+      },
+      {
+        "turn": 2,
+        "action": "publish the held story (government-critical)",
+        "keyMoment": "Leak Deepens Defense Crisis"
+      }
+    ]
+  }
+]
