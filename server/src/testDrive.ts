@@ -138,12 +138,61 @@ async function main() {
   const resumed = await emit<{ ok: boolean }>(s2, EV.RESUME, { token: players[1].token });
   check(resumed.ok, 'resume with token');
 
+  await partialRoomScenario();
+
   players.forEach(p => p.socket.connected && p.socket.disconnect());
   s2.disconnect();
   io.close();
   httpServer.close();
   console.log(failures ? `\n${failures} FAILURES` : '\nALL CHECKS PASSED');
   process.exit(failures ? 1 : 0);
+}
+
+// Partial room: 2 humans (one never claims a role), AI fills the rest, game runs to reveal.
+async function partialRoomScenario() {
+  console.log('7. partial room: 2 humans + AI fill to reveal');
+  const host = Client(url);
+  const created = await emit<{ ok: boolean; roomCode: string; token: string }>(host, EV.CREATE, { mode: 'real', name: 'Host2' });
+  const p0: P = { role: 'journalist_1', socket: host, view: null, token: created.token };
+  host.on(EV.VIEW, v => { p0.view = v; });
+  check((await emit<{ ok: boolean }>(host, EV.CLAIM, { role: 'journalist_1' })).ok, 'host claims journalist_1');
+
+  const s = Client(url);
+  const joined = await emit<{ ok: boolean; token: string }>(s, EV.JOIN, { roomCode: created.roomCode, name: 'Roleless' });
+  const p1: P = { role: 'journalist_2', socket: s, view: null, token: joined.token }; // never claims — must be auto-seated
+  s.on(EV.VIEW, v => { p1.view = v; });
+
+  check((await emit<{ ok: boolean; error?: string }>(host, EV.START, { fillAi: true })).ok, 'start with 2/5 humans');
+  await until(p1, v => v.phase === 'briefing', 'partial-room briefing');
+  check(p1.view!.myRole != null, `roleless human auto-seated (got ${p1.view!.myRole})`);
+  check(p0.view!.players.filter(x => x.isAi).length === 3, `3 AI seats filled (got ${p0.view!.players.filter(x => x.isAi).length})`);
+  check(p0.view!.players.length === 5, 'exactly 5 seats total');
+  await emit(host, EV.READY, {});
+  await emit(s, EV.READY, {});
+
+  // Generic driver: submit defaults whenever a form appears, until reveal (invasion end also counts).
+  const humans = [p0, p1];
+  const deadline = Date.now() + 60000;
+  while (!humans.every(p => p.view?.phase === 'reveal')) {
+    if (Date.now() > deadline) throw new Error(`partial-room game stalled (phases: ${humans.map(p => p.view?.phase).join(',')})`);
+    for (const p of humans) {
+      const v = p.view;
+      if (v && (v.phase === 'actions' || v.phase === 'inject_decision') && v.actionSpec && !v.submitted) {
+        const choices: Record<string, string> = {};
+        for (const f of v.actionSpec.fields) {
+          if (f.type === 'choice' && (!f.showIf || choices[f.showIf.field] === f.showIf.value)) choices[f.name] = f.options![0].value;
+        }
+        await emit(p.socket, EV.ACTION, { choices, freeText: '' }); // stale-view races are fine; server rejects dupes
+      }
+    }
+    await new Promise(r => setTimeout(r, 120));
+  }
+  const rv = p1.view!.reveal!;
+  check(rv.trajectory.length >= 3, `partial-room reveal has trajectory (${rv.trajectory.length} pts)`);
+  check(['completed', 'invasion'].includes(rv.outcome), `outcome sane (${rv.outcome})`);
+  console.log(`   partial-room game finished: outcome=${rv.outcome}, final WD=${rv.finalScores.wd}`);
+  host.disconnect();
+  s.disconnect();
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

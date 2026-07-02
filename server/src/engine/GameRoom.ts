@@ -107,6 +107,12 @@ export class GameRoom {
     if (!m?.isHost) return 'only the host can start';
     if (this.phase !== 'lobby') return 'already started';
     if (!m.role) return 'claim a role first';
+    // Seat humans who never picked a role before giving seats to AI
+    for (const member of this.members) {
+      if (member.role) continue;
+      const free = ALL_ROLES.find(r => !this.byRole(r));
+      if (free) member.role = free;
+    }
     for (const role of ALL_ROLES) {
       if (!this.byRole(role)) {
         if (!fillAi) return `role unfilled: ${ROLE_META[role].short}`;
