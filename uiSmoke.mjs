@@ -14,7 +14,7 @@ const clickByText = async (text, tag = 'button') => {
   await page.locator(`${tag}:has-text("${text}")`).first().click({ timeout: 8000 });
 };
 
-await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
+await page.goto(process.env.URL || 'http://localhost:5173/', { waitUntil: 'networkidle' });
 await snap('01-landing');
 console.log('landing title:', await page.title());
 
@@ -32,8 +32,28 @@ await snap('02-briefing');
 await page.locator('button', { hasText: /understand|ready/i }).first().click();
 console.log('briefing acknowledged');
 
+// answer press-conference interview questions if the inject fires
+async function maybeInterview() {
+  for (let i = 0; i < 4; i++) {
+    const ta = page.locator('textarea');
+    if (!(await ta.first().isVisible().catch(() => false))) return;
+    try { await page.waitForSelector('textarea:not([disabled])', { timeout: 20000 }); } catch { return; }
+    await ta.first().fill('On the record: we take this seriously and will act.');
+    const btn = page.locator('button', { hasText: 'Answer' }).first();
+    if (!(await btn.isVisible().catch(() => false))) return;
+    await btn.click();
+    console.log('answered interview question');
+    await page.waitForTimeout(900);
+  }
+}
+
 // turn 0 resolves without us (opposition waits); then act turns 1..2
 for (let turn = 1; turn <= 2; turn++) {
+  for (let tries = 0; tries < 30; tries++) {
+    await maybeInterview();
+    if (await page.locator('input[type=radio]').first().isVisible().catch(() => false)) break;
+    await page.waitForTimeout(1000);
+  }
   await page.locator('.opt, [class*=opt], label:has(input[type=radio])').first().waitFor({ timeout: 30000 });
   await snap(`03-turn${turn}`);
   // pick first radio of each visible group until submit enables

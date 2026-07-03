@@ -78,6 +78,35 @@ export function getActionSpec(role: Role, turn: number, hasPublishedLeak: boolea
   };
 }
 
+// Situation-specific weekly options written by the game master, merged with engine-owned invariants
+// (the held-leak option must always exist while the leak is unpublished; journalists pick a sentiment).
+export function dynamicActionSpec(role: Role, gmOptions: string[], hasPublishedLeak: boolean): ActionSpec {
+  const clean = [...new Set(gmOptions.map(o => o.trim()).filter(o => o.length >= 3))]
+    .slice(0, 5)
+    .map(o => ({ value: o.slice(0, 90), label: o.charAt(0).toUpperCase() + o.slice(1, 90) }));
+  const isJournalist = JOURNALIST_ROLES.includes(role);
+  const options = [
+    ...(isJournalist && !hasPublishedLeak
+      ? [{ value: 'publish the held leak documents', label: 'Publish the leaked documents now' }]
+      : []),
+    ...clean,
+  ];
+  const fields: ActionSpec['fields'] = [
+    { name: 'decision', label: 'Action', type: 'choice', options },
+    ...(isJournalist
+      ? [{
+          name: 'format', label: 'Sentiment', type: 'choice' as const, options: [
+            { value: 'government-critical', label: 'Government-critical' },
+            { value: 'calling the public to action', label: 'Call to action' },
+            { value: 'reassuring and constructive', label: 'Reassuring / constructive' },
+          ],
+        }]
+      : []),
+    { name: 'freeText', label: 'Details (optional)', type: 'text' },
+  ];
+  return { prompt: 'Your move this week.', fields };
+}
+
 export function getInjectSpec(type: InjectType): ActionSpec {
   switch (type) {
     case 'no_confidence':
@@ -119,7 +148,8 @@ export function getInjectSpec(type: InjectType): ActionSpec {
         ],
       };
     case 'invasion':
-      // no decision — invasion ends the game; spec never rendered
+    case 'press_conference':
+      // no fixed-choice decision — invasion ends the game; press_conference runs the interview phase
       return { prompt: '', fields: [] };
   }
 }

@@ -49,6 +49,38 @@ export function stubGmOutput(inp: GmTurnInput): GmOutput {
     publicMoodHint: anyPublished
       ? 'The public is rattled — anger at the government mixing with a creeping sense of vulnerability.'
       : 'The public is calm, though political insiders seem nervous.',
+    roleActions: {
+      journalist_1: [
+        `interview the whistleblower behind the leak (week ${t + 2})`,
+        'investigate who signed the readiness reports',
+        'write a reassuring explainer on civil defense',
+        'stay quiet and verify new tips',
+      ],
+      journalist_2: [
+        `profile the soldiers manning the ${t + 2} working batteries`,
+        'chase the spare-parts procurement paper trail',
+        'op-ed: what readiness would actually cost',
+        'stay quiet this week',
+      ],
+      journalist_3: [
+        'doorstep the defense minister for comment',
+        `run a fact-check on this week's government line`,
+        'publish a call for calm and preparedness',
+        'hold and cultivate ministry sources',
+      ],
+      government: [
+        'announce an independent readiness audit',
+        `unveil emergency procurement of spare parts (week ${t + 2})`,
+        'attack the leak as a security breach',
+        'address the nation directly on defense',
+      ],
+      opposition: [
+        'table an urgent parliamentary question',
+        'tour the neglected garrisons with cameras',
+        'offer a cross-party defense compact',
+        `demand the minister resign by week ${t + 2}`,
+      ],
+    },
     keyMoment: anyPublished ? (t === 0 ? 'The readiness lie goes public' : 'Scandal deepens, accountability demanded') : 'An uneasy quiet holds',
   };
 }

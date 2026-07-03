@@ -4,9 +4,10 @@ import type {
 import { ALL_ROLES, JOURNALIST_ROLES, ROLE_META } from '@iwj/shared';
 import { randomUUID } from 'node:crypto';
 import { ROLE_CARDS, INITIAL_MOOD, INVASION_NARRATIVE } from '../content.js';
-import { getActionSpec, getInjectSpec, validateAction, defaultAction, describeAction } from './actions.js';
+import { getActionSpec, getInjectSpec, dynamicActionSpec, validateAction, defaultAction, describeAction } from './actions.js';
 import { resolveTurn, type GmOutput } from '../llm/gameMaster.js';
 import { decideAiAction } from '../llm/aiPlayer.js';
+import { askQuestion, type QaPair } from '../llm/interviewer.js';
 import * as db from '../db.js';
 
 export interface Member {
@@ -59,6 +60,8 @@ export class GameRoom {
   usedInjects = new Set<InjectType>();
   injectsFired = 0;
   pendingInject: PendingInject | null = null;
+  interviews = new Map<Role, { qa: QaPair[]; done: boolean; asking: boolean }>();
+  interviewContext: string | null = null;
   persistentNotes: string[] = [];
   oneTimeContext: string | null = null;
   outcome: Outcome = 'completed';
@@ -70,7 +73,7 @@ export class GameRoom {
     this.code = code;
     this.mode = mode;
     this.finalTurn = mode === 'demo' ? 2 : 5;
-    this.injectBudget = mode === 'demo' ? 1 : 2;
+    this.injectBudget = mode === 'demo' ? 1 : 3;
   }
 
   // ---- lobby ----
@@ -147,12 +150,89 @@ export class GameRoom {
     }
     if (this.phase !== 'actions') return null;
     if (!this.requiredActors().includes(role)) return null;
+    // From turn 1 on, the game master writes situation-specific options for each role
+    const gmOptions = this.turn >= 1 ? this.lastGm?.roleActions?.[role as keyof GmOutput['roleActions']] : undefined;
+    if (gmOptions?.length) return dynamicActionSpec(role, gmOptions, this.publishedLeak.has(role));
     return getActionSpec(role, this.turn, this.publishedLeak.has(role));
   }
 
   private startTurnPhase(): void {
     this.pendingActions.clear();
+    if (this.pendingInject?.type === 'press_conference') return this.startInterview();
     this.phase = this.pendingInject ? 'inject_decision' : 'actions';
+    this.onChange();
+    this.scheduleAi();
+  }
+
+  // ---- press conference: every human faces the interviewer simultaneously ----
+  private startInterview(): void {
+    const inj = this.pendingInject!;
+    this.pendingInject = null;
+    this.interviewContext = inj.context;
+    this.interviews.clear();
+    this.phase = 'interview';
+    const situation = this.lastGm
+      ? `${this.lastGm.keyMoment}. ${this.lastGm.publicNarrative}`
+      : 'A defense-readiness scandal is breaking.';
+    const humans = this.members.filter(m => !m.isAi && m.role);
+    for (const m of humans) {
+      this.interviews.set(m.role!, { qa: [], done: false, asking: true });
+      void this.fireQuestion(m.role!, m.name, situation);
+    }
+    this.onChange();
+  }
+
+  private async fireQuestion(role: Role, name: string, situation: string): Promise<void> {
+    const iv = this.interviews.get(role);
+    if (!iv || this.phase !== 'interview') return;
+    try {
+      const q = await askQuestion(this.mode, role, name, situation, iv.qa);
+      if (this.phase !== 'interview' || iv.done) return; // force-skipped while asking
+      iv.qa.push({ q, a: null });
+    } catch (e) {
+      console.error('[interview] question failed:', (e as Error).message);
+      iv.qa.push({ q: 'The floor is yours — what does the country need to hear from you this week?', a: null });
+    }
+    iv.asking = false;
+    this.onChange();
+  }
+
+  submitInterviewReply(token: string, text: string): string | null {
+    const m = this.byToken(token);
+    if (!m?.role) return 'no role';
+    if (this.phase !== 'interview') return 'no interview running';
+    const iv = this.interviews.get(m.role);
+    if (!iv || iv.done) return 'your interview is over';
+    const open = iv.qa[iv.qa.length - 1];
+    if (!open || open.a !== null) return 'wait for the question';
+    open.a = (text || '').trim().slice(0, 400) || '(no comment)';
+    if (iv.qa.length >= 2) {
+      iv.done = true;
+      this.checkInterviewComplete();
+    } else {
+      iv.asking = true;
+      const situation = this.lastGm ? `${this.lastGm.keyMoment}. ${this.lastGm.publicNarrative}` : 'The scandal continues.';
+      void this.fireQuestion(m.role, m.name, situation);
+    }
+    this.onChange();
+    return null;
+  }
+
+  private checkInterviewComplete(): void {
+    if ([...this.interviews.values()].some(iv => !iv.done)) return;
+    const transcript = [...this.interviews.entries()]
+      .map(([role, iv]) => {
+        const member = this.byRole(role);
+        const qa = iv.qa.map(x => `Q: ${x.q} A: ${x.a ?? '(declined)'}`).join(' ');
+        return `${ROLE_META[role].label} ("${member?.name ?? '?'}"): ${qa}`;
+      })
+      .join(' | ');
+    this.oneTimeContext =
+      `A live national press conference aired this week; the exchanges are shaping coverage. Transcript: ${transcript}`;
+    this.lastInjectNarrative = 'A live national press conference put every key figure on the record.';
+    if (this.dbGameId != null) db.recordInject(this.dbGameId, this.turn, 'press_conference', this.interviewContext ?? '', transcript.slice(0, 2000));
+    this.interviewContext = null;
+    this.phase = 'actions';
     this.onChange();
     this.scheduleAi();
   }
@@ -202,6 +282,18 @@ export class GameRoom {
     if (this.phase === 'briefing') {
       this.members.forEach(x => { x.ready = true; });
       this.startTurnPhase();
+      return null;
+    }
+    if (this.phase === 'interview') {
+      for (const iv of this.interviews.values()) {
+        if (iv.done) continue;
+        if (!iv.qa.length) iv.qa.push({ q: '(the moderator moves on)', a: '(declined to comment)' });
+        const open = iv.qa[iv.qa.length - 1];
+        if (open.a === null) open.a = '(declined to comment)';
+        iv.done = true;
+        iv.asking = false;
+      }
+      this.checkInterviewComplete();
       return null;
     }
     if (this.phase !== 'actions' && this.phase !== 'inject_decision') return 'nothing to skip';
@@ -353,22 +445,29 @@ export class GameRoom {
     const rules: { type: InjectType; when: boolean; prob: number; deciders: Role[]; context: string }[] = [
       {
         type: 'no_confidence',
-        when: this.scores.gp <= 25 && this.turn + 1 >= 2,
-        prob: 0.7,
+        when: this.scores.gp <= 30 && this.turn + 1 >= 2,
+        prob: 0.8,
         deciders: ['opposition'],
         context: 'Backbenchers are whispering: the government might not survive a vote of no confidence.',
       },
       {
+        type: 'press_conference',
+        when: anyPublished,
+        prob: 0.6,
+        deciders: [...ALL_ROLES],
+        context: 'The week opens with a live national press conference: every key figure faces the moderator, one on one, on the record.',
+      },
+      {
         type: 'tv_debate',
-        when: maxAt >= 60 && anyPublished,
-        prob: 0.5,
+        when: maxAt >= 50 && anyPublished,
+        prob: 0.65,
         deciders: [...JOURNALIST_ROLES],
         context: 'The country’s biggest talk show wants the journalists behind the readiness story live on air tonight.',
       },
       {
         type: 'book_deal',
-        when: maxAt >= 70 && !!topJournalist,
-        prob: 0.4,
+        when: maxAt >= 60 && !!topJournalist,
+        prob: 0.55,
         deciders: topJournalist ? [topJournalist] : [],
         context: 'A major publisher smells a bestseller in the scandal.',
       },
@@ -407,6 +506,10 @@ export class GameRoom {
           const m = this.byRole(r);
           return m ? (m.isAi ? `${m.name} (AI)` : m.name) : ROLE_META[r].short;
         }));
+    } else if (this.phase === 'interview') {
+      waitingOn.push(...[...this.interviews.entries()]
+        .filter(([, iv]) => !iv.done)
+        .map(([r]) => this.byRole(r)?.name ?? ROLE_META[r].short));
     }
 
     const visibleScores: { label: string; value: number }[] = [];
@@ -450,8 +553,28 @@ export class GameRoom {
       actionSpec: submitted ? null : spec,
       submitted,
       waitingOn,
-      injectPrompt: this.phase === 'inject_decision' ? this.pendingInject?.context ?? null : null,
+      injectPrompt: this.phase === 'inject_decision'
+        ? this.pendingInject?.context ?? null
+        : this.phase === 'interview' ? this.interviewContext : null,
+      interview: this.buildInterviewState(role),
       reveal: this.phase === 'reveal' ? this.buildReveal() : null,
+    };
+  }
+
+  private buildInterviewState(role: Role | null) {
+    if (this.phase !== 'interview' || !role) return null;
+    const iv = this.interviews.get(role);
+    if (!iv) return null;
+    const messages: { from: 'interviewer' | 'you'; text: string }[] = [];
+    for (const x of iv.qa) {
+      messages.push({ from: 'interviewer', text: x.q });
+      if (x.a !== null) messages.push({ from: 'you', text: x.a });
+    }
+    const last = iv.qa[iv.qa.length - 1];
+    return {
+      messages,
+      awaitingReply: !iv.done && !iv.asking && !!last && last.a === null,
+      done: iv.done,
     };
   }
 

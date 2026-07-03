@@ -22,6 +22,10 @@ export const GmOutputSchema = z.object({
     journalist_1: z.string(), journalist_2: z.string(), journalist_3: z.string(),
     government: z.string(), opposition: z.string(),
   }),
+  roleActions: z.object({
+    journalist_1: z.array(z.string()).min(3), journalist_2: z.array(z.string()).min(3), journalist_3: z.array(z.string()).min(3),
+    government: z.array(z.string()).min(3), opposition: z.array(z.string()).min(3),
+  }),
   publicMoodHint: z.string(),
   keyMoment: z.string(),
 });
@@ -55,6 +59,7 @@ Respond with STRICT JSON only:
  "scoreDeltas": {"wd": int -15..15, "gp": int -15..15, "at": {"journalist_1": int -20..20, "journalist_2": int -20..20, "journalist_3": int -20..20}},
  "deltaRationales": {"wd": "one sentence", "gp": "one sentence"},
  "roleBriefs": {"journalist_1": "...", "journalist_2": "...", "journalist_3": "...", "government": "...", "opposition": "..."},  // next-week brief addressed to each player, reflecting what THEY can see; never reveal private actions of others
+ "roleActions": {"journalist_1": ["...", ...], "journalist_2": [...], "journalist_3": [...], "government": [...], "opposition": [...]},  // 4 concrete actions EACH ROLE could take NEXT week, tailored to the situation you just narrated: short imperative phrases (max 9 words), specific (name the person, event or angle), mutually distinct, in character. These become the player's clickable options — make them tempting in different directions (escalate / de-escalate / self-interested / country-first).
  "publicMoodHint": "one qualitative sentence about the public mood, NO numbers",
  "keyMoment": "max 8 words, label for the analytics timeline"
 }
@@ -83,7 +88,7 @@ export async function resolveTurn(inp: GmTurnInput): Promise<GmOutput> {
   const stub = () => stubGmOutput(inp);
   if (USE_STUB) return stub();
   const model = inp.mode === 'demo' ? DEMO_MODEL : GAME_MODEL;
-  const maxTokens = inp.mode === 'demo' ? 700 : 1400;
+  const maxTokens = inp.mode === 'demo' ? 1000 : 1900;
   return withFallback('gameMaster', async () => {
     const raw = await jsonCall(model, systemPrompt(inp.mode), userPrompt(inp), maxTokens);
     return GmOutputSchema.parse(raw);

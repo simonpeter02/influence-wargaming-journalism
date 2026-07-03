@@ -101,6 +101,12 @@ export function registerSockets(io: Server): void {
       err ? fail(ack, err) : ok(ack);
     });
 
+    socket.on(EV.INTERVIEW, (payload: { text: string }, ack: Ack) => {
+      if (!myRoom || !myToken) return fail(ack, 'not in a room');
+      const err = myRoom.submitInterviewReply(myToken, payload?.text ?? '');
+      err ? fail(ack, err) : ok(ack);
+    });
+
     socket.on(EV.FORCESKIP, (_payload: unknown, ack: Ack) => {
       if (!myRoom || !myToken) return fail(ack, 'not in a room');
       const err = myRoom.forceSkip(myToken);

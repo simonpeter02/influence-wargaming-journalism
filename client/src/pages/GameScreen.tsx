@@ -4,6 +4,7 @@ import { submitAction, forceSkip } from '../socket';
 import ActionForm from '../components/ActionForm';
 import DebriefView from '../components/DebriefView';
 import Briefing from '../components/Briefing';
+import InterviewChat from '../components/InterviewChat';
 import ScoreBadges from '../components/ScoreBadges';
 import WaitingNote from '../components/WaitingNote';
 
@@ -63,6 +64,32 @@ export default function GameScreen({ view, onError }: Props) {
             />
           )}
         </div>
+      </div>
+    );
+  }
+
+  if (view.phase === 'interview') {
+    return (
+      <div className="wrap">
+        <div className="topbar">
+          <span className="turnpill">Week {view.turn + 1} of {view.finalTurn + 1} — breaking</span>
+          <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+            <ScoreBadges scores={view.visibleScores} />
+            {forceSkipButton}
+          </span>
+        </div>
+        <h1>{view.roleLabel ?? view.playerName}</h1>
+        {view.injectPrompt && (
+          <div className="card inject-card">
+            <div className="muted" style={{ marginBottom: 6 }}>BREAKING</div>
+            <p className="secondary" style={{ margin: 0 }}>{view.injectPrompt}</p>
+          </div>
+        )}
+        {view.interview ? (
+          <InterviewChat interview={view.interview} waitingOn={view.waitingOn} onError={onError} />
+        ) : (
+          <WaitingNote title="The press conference is live — others are at the podium." names={view.waitingOn} />
+        )}
       </div>
     );
   }

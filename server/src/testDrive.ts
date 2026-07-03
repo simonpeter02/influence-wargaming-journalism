@@ -4,6 +4,7 @@ import { io as Client, type Socket } from 'socket.io-client';
 import type { PlayerView, Role } from '@iwj/shared';
 import { ALL_ROLES, EV, JOURNALIST_ROLES } from '@iwj/shared';
 import { startServer } from './index.js';
+import { rooms } from './sockets.js';
 
 const PORT = 3999;
 const url = `http://localhost:${PORT}`;
@@ -46,6 +47,7 @@ async function main() {
   const created = await emit<{ ok: boolean; roomCode: string; token: string }>(hostSocket, EV.CREATE, { mode: 'real', name: 'Host' });
   check(created.ok, 'create ok');
   const roomCode = created.roomCode;
+  rooms.get(roomCode)!.rng = () => 0.99; // scenario 1 tests pure turn flow; scenario 7 forces all injects
   players.push({ role: 'journalist_1', socket: hostSocket, view: null, token: created.token });
   hostSocket.on(EV.VIEW, v => { players[0].view = v; });
 
@@ -162,6 +164,7 @@ async function partialRoomScenario() {
   const p1: P = { role: 'journalist_2', socket: s, view: null, token: joined.token }; // never claims — must be auto-seated
   s.on(EV.VIEW, v => { p1.view = v; });
 
+  rooms.get(created.roomCode)!.rng = () => 0; // every eligible inject fires: covers press conference + decisions
   check((await emit<{ ok: boolean; error?: string }>(host, EV.START, { fillAi: true })).ok, 'start with 2/5 humans');
   await until(p1, v => v.phase === 'briefing', 'partial-room briefing');
   check(p1.view!.myRole != null, `roleless human auto-seated (got ${p1.view!.myRole})`);
@@ -170,14 +173,25 @@ async function partialRoomScenario() {
   await emit(host, EV.READY, {});
   await emit(s, EV.READY, {});
 
-  // Generic driver: submit defaults whenever a form appears, until reveal (invasion end also counts).
+  // Generic driver: submit defaults / answer interviews whenever prompted, until reveal.
   const humans = [p0, p1];
+  let sawInterview = false;
+  let sawDynamicOptions = false;
   const deadline = Date.now() + 60000;
   while (!humans.every(p => p.view?.phase === 'reveal')) {
     if (Date.now() > deadline) throw new Error(`partial-room game stalled (phases: ${humans.map(p => p.view?.phase).join(',')})`);
     for (const p of humans) {
       const v = p.view;
-      if (v && (v.phase === 'actions' || v.phase === 'inject_decision') && v.actionSpec && !v.submitted) {
+      if (!v) continue;
+      if (v.phase === 'interview' && v.interview?.awaitingReply) {
+        sawInterview = true;
+        await emit(p.socket, EV.INTERVIEW, { text: 'On the record: we take responsibility and we will fix this.' });
+      }
+      if ((v.phase === 'actions' || v.phase === 'inject_decision') && v.actionSpec && !v.submitted) {
+        if (v.phase === 'actions' && v.turn >= 1 &&
+            v.actionSpec.fields[0].options!.some(o => /whistleblower|paper trail|garrisons|readiness audit|fact-check|doorstep/.test(o.value))) {
+          sawDynamicOptions = true;
+        }
         const choices: Record<string, string> = {};
         for (const f of v.actionSpec.fields) {
           if (f.type === 'choice' && (!f.showIf || choices[f.showIf.field] === f.showIf.value)) choices[f.name] = f.options![0].value;
@@ -190,6 +204,8 @@ async function partialRoomScenario() {
   const rv = p1.view!.reveal!;
   check(rv.trajectory.length >= 3, `partial-room reveal has trajectory (${rv.trajectory.length} pts)`);
   check(['completed', 'invasion'].includes(rv.outcome), `outcome sane (${rv.outcome})`);
+  check(sawInterview, 'press-conference interview ran (both humans questioned)');
+  check(sawDynamicOptions, 'GM-generated situation-specific options offered');
   console.log(`   partial-room game finished: outcome=${rv.outcome}, final WD=${rv.finalScores.wd}`);
   host.disconnect();
   s.disconnect();

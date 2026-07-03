@@ -5,9 +5,9 @@ export const ALL_ROLES: Role[] = ['journalist_1', 'journalist_2', 'journalist_3'
 export const JOURNALIST_ROLES: Role[] = ['journalist_1', 'journalist_2', 'journalist_3'];
 
 export type Mode = 'real' | 'demo';
-export type Phase = 'lobby' | 'briefing' | 'inject_decision' | 'actions' | 'resolving' | 'reveal';
+export type Phase = 'lobby' | 'briefing' | 'inject_decision' | 'interview' | 'actions' | 'resolving' | 'reveal';
 
-export type InjectType = 'no_confidence' | 'invasion' | 'tv_debate' | 'book_deal';
+export type InjectType = 'no_confidence' | 'invasion' | 'tv_debate' | 'book_deal' | 'press_conference';
 export type Outcome = 'completed' | 'invasion' | 'abandoned';
 
 export const ROLE_META: Record<Role, { label: string; short: string; outlet?: string; scoreLabel: string; emoji: string }> = {
@@ -92,7 +92,14 @@ export interface PlayerView {
   submitted: boolean;
   waitingOn: string[];                 // player names we are waiting for in this phase
   injectPrompt: string | null;         // shown during inject_decision to the decider(s)
+  interview: InterviewState | null;    // set during phase 'interview' for players being interviewed
   reveal: RevealData | null;           // only set in phase 'reveal'
+}
+
+export interface InterviewState {
+  messages: { from: 'interviewer' | 'you'; text: string }[];
+  awaitingReply: boolean;  // true when the interviewer has asked and it is your turn to answer
+  done: boolean;
 }
 
 // ---- socket protocol ----
@@ -103,6 +110,7 @@ export interface PlayerView {
 //   'game:start'     {fillAi?:boolean}            ack   (host only; fillAi fills empty seats with AI)
 //   'player:ready'   {}                           ack   (briefing ready-up / debrief continue)
 //   'action:submit'  {choices, freeText}          ack
+//   'interview:reply' {text}                      ack   (answer the interviewer during phase 'interview')
 //   'session:resume' {token}                      ack
 //   'host:forceskip' {}                           ack   (host skips missing/stalled actors)
 // S→C:
@@ -114,6 +122,7 @@ export const EV = {
   START: 'game:start',
   READY: 'player:ready',
   ACTION: 'action:submit',
+  INTERVIEW: 'interview:reply',
   RESUME: 'session:resume',
   FORCESKIP: 'host:forceskip',
   VIEW: 'view',

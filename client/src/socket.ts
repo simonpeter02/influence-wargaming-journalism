@@ -40,6 +40,8 @@ export const sendReady = () => emitAck(EV.READY, {});
 
 export const submitAction = (action: SubmittedAction) => emitAck(EV.ACTION, action);
 
+export const sendInterviewReply = (text: string) => emitAck(EV.INTERVIEW, { text });
+
 export const resumeSession = (token: string) => emitAck(EV.RESUME, { token });
 
 export const forceSkip = () => emitAck(EV.FORCESKIP, {});
